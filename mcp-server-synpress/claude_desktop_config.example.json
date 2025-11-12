@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "synpress": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/synpress/mcp-server-synpress/dist/index.js"
+      ],
+      "env": {
+        "METAMASK_EXTENSION_PATH": "/path/to/metamask-extension",
+        "TEST_SEED_PHRASE": "test test test test test test test test test test test junk",
+        "TEST_PASSWORD": "TestPassword123!"
+      }
+    }
+  }
+}
