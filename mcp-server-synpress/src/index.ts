@@ -251,6 +251,14 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'sign_message_with_risk',
+    description: 'Sign a message with risk acknowledgement (for risky signature scenarios)',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
     name: 'reject_signature',
     description: 'Reject a signature request',
     inputSchema: {
@@ -341,6 +349,22 @@ const TOOLS: Tool[] = [
       properties: {},
     },
   },
+  {
+    name: 'approve_ethereum_rpc',
+    description: 'Approve changing Ethereum RPC provider',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'reject_ethereum_rpc',
+    description: 'Reject changing Ethereum RPC provider',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
 
   // Page Navigation
   {
@@ -425,8 +449,46 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'toggle_show_test_networks',
+    description: 'Toggle visibility of test networks in network list',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'open_transaction_details',
+    description: 'Open transaction details for inspection',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        txIndex: {
+          type: 'number',
+          description: 'Transaction index (0-based)',
+        },
+      },
+      required: ['txIndex'],
+    },
+  },
+  {
+    name: 'close_transaction_details',
+    description: 'Close transaction details view',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
     name: 'enable_eth_sign',
     description: 'Enable eth_sign method (UNSAFE - only for testing)',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'disable_eth_sign',
+    description: 'Disable eth_sign method',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -808,6 +870,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case 'sign_message_with_risk': {
+        if (!metamask) throw new Error('Browser not initialized.');
+
+        await metamask.confirmSignatureWithRisk();
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: 'Message signed with risk acknowledgement',
+              }),
+            },
+          ],
+        };
+      }
+
       case 'reject_signature': {
         if (!metamask) throw new Error('Browser not initialized.');
 
@@ -972,6 +1052,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case 'approve_ethereum_rpc': {
+        if (!metamask) throw new Error('Browser not initialized.');
+
+        await metamask.approveNewEthereumRPC();
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: 'Ethereum RPC change approved',
+              }),
+            },
+          ],
+        };
+      }
+
+      case 'reject_ethereum_rpc': {
+        if (!metamask) throw new Error('Browser not initialized.');
+
+        await metamask.rejectNewEthereumRPC();
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: 'Ethereum RPC change rejected',
+              }),
+            },
+          ],
+        };
+      }
+
       case 'navigate_to_url': {
         if (!page) throw new Error('Browser not initialized.');
 
@@ -1066,6 +1182,61 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case 'toggle_show_test_networks': {
+        if (!metamask) throw new Error('Browser not initialized.');
+
+        await metamask.toggleShowTestNetworks();
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: 'Test networks visibility toggled',
+              }),
+            },
+          ],
+        };
+      }
+
+      case 'open_transaction_details': {
+        if (!metamask) throw new Error('Browser not initialized.');
+
+        const { txIndex } = args as any;
+        await metamask.openTransactionDetails(txIndex);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: `Transaction details opened for tx ${txIndex}`,
+              }),
+            },
+          ],
+        };
+      }
+
+      case 'close_transaction_details': {
+        if (!metamask) throw new Error('Browser not initialized.');
+
+        await metamask.closeTransactionDetails();
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: 'Transaction details closed',
+              }),
+            },
+          ],
+        };
+      }
+
       case 'enable_eth_sign': {
         if (!metamask) throw new Error('Browser not initialized.');
 
@@ -1078,6 +1249,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify({
                 success: true,
                 message: 'eth_sign enabled (UNSAFE)',
+              }),
+            },
+          ],
+        };
+      }
+
+      case 'disable_eth_sign': {
+        if (!metamask) throw new Error('Browser not initialized.');
+
+        await metamask.disableEthSign();
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: 'eth_sign disabled',
               }),
             },
           ],
