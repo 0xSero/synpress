@@ -30,7 +30,7 @@ const TOOLS: Tool[] = [
         },
         extensionPath: {
           type: 'string',
-          description: 'Path to MetaMask extension (optional, will download if not provided)',
+          description: 'Path to MetaMask extension (optional, uses METAMASK_EXTENSION_PATH env var if not provided)',
         },
       },
     },
@@ -547,31 +547,80 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'initialize_browser': {
         const { headless = false, extensionPath } = args as any;
 
-        // Download MetaMask extension if not provided
-        // For now, we'll require the extension path
-        if (!extensionPath) {
-          throw new Error('extensionPath is required. Download MetaMask extension and provide the path.');
+        // Use provided extensionPath or check environment variable
+        const finalExtensionPath = extensionPath || process.env.METAMASK_EXTENSION_PATH;
+
+        if (!finalExtensionPath) {
+          throw new Error('extensionPath is required. Either provide it as a parameter or set METAMASK_EXTENSION_PATH environment variable.');
         }
 
         context = await chromium.launchPersistentContext('', {
           headless,
           args: [
-            `--disable-extensions-except=${extensionPath}`,
-            `--load-extension=${extensionPath}`,
+            `--disable-extensions-except=${finalExtensionPath}`,
+            `--load-extension=${finalExtensionPath}`,
             '--disable-blink-features=AutomationControlled',
+            '--disable-extensions-http-throttling',
+            '--disable-dev-shm-usage',
+            '--no-first-run',
+            '--no-default-browser-check',
           ],
         });
 
         page = context.pages()[0] || await context.newPage();
 
+        // Wait for extension to potentially create its pages
+        // MetaMask might create its onboarding page automatically
+        console.log('Waiting for extension pages...');
+
+        // Wait for extension to initialize
+        await page.waitForTimeout(5000);
+
+        // Check all pages created by the extension
+        const allPages = context.pages();
+        console.log(`Total pages after extension load: ${allPages.length}`);
+
+        let detectedExtensionId = '';
+        for (let i = 0; i < allPages.length; i++) {
+          const p = allPages[i];
+          if (p) {
+            const url = p.url();
+            console.log(`Page ${i}: ${url}`);
+
+            // Extract extension ID from chrome-extension:// URLs
+            const match = url.match(/chrome-extension:\/\/([^\/]+)/);
+            if (match && match[1]) {
+              detectedExtensionId = match[1];
+              console.log(`Detected extension ID: ${detectedExtensionId}`);
+            }
+          }
+        }
+
+        // Set the first page as our working page
+        const firstPage = context.pages()[0];
+        if (firstPage) {
+          page = firstPage;
+        }
+
         // Initialize MetaMask instance
         // We'll set password and extensionId later during import
+        if (!page) {
+          throw new Error('Failed to create page');
+        }
+
+        // Store extension ID globally so we can use it later
+        (globalThis as any).__METAMASK_EXTENSION_ID__ = detectedExtensionId;
+
         metamask = new MetaMask(
           context,
           page,
           '', // password - will be set during import
-          '' // extensionId - will be auto-detected
+          detectedExtensionId || '' // Use detected extension ID
         );
+
+        // Debug: Check if page is accessible
+        const currentUrl = page.url();
+        const title = await page.title().catch(() => 'N/A');
 
         return {
           content: [
@@ -580,6 +629,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify({
                 success: true,
                 message: 'Browser initialized with MetaMask extension',
+                debug: {
+                  currentUrl,
+                  title,
+                  headless,
+                  extensionPath: finalExtensionPath,
+                },
               }),
             },
           ],
@@ -591,9 +646,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const { seedPhrase, password } = args as any;
 
+        // Get the detected extension ID
+        const extensionId = (globalThis as any).__METAMASK_EXTENSION_ID__ || '';
+
         // We need to recreate the MetaMask instance with the password
         if (context && page) {
-          metamask = new MetaMask(context, page, password, '');
+          // Wait for extension to fully initialize
+          await page.waitForTimeout(3000);
+
+          // MetaMask extension UI might appear on any page
+          // Let's check all pages in the context
+          const allPages = context.pages();
+          console.log(`Total pages in context: ${allPages.length}`);
+
+          // Check if there's a MetaMask extension page
+          let metamaskPage = page;
+          for (const p of allPages) {
+            const url = p.url();
+            console.log(`Page URL: ${url}`);
+            if (url.includes('chrome-extension') || url.includes('metamask')) {
+              metamaskPage = p;
+              console.log('Found MetaMask page');
+              break;
+            }
+          }
+
+          // Update metamask instance to use the correct page and extension ID
+          metamask = new MetaMask(context, metamaskPage, password, extensionId);
+
+          // Wait a bit more for UI to be ready
+          await metamaskPage.waitForTimeout(2000);
+
+          console.log(`Importing wallet on page: ${metamaskPage.url()}`);
+          console.log(`Using extension ID: ${extensionId || 'auto-detect'}`);
+
           await metamask.importWallet(seedPhrase);
         }
 
